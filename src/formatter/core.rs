@@ -340,6 +340,8 @@ fn format_root(
     let profile = ctx.sentence().resolved();
     let cx = LowerCtx {
         wrap: ctx.style().wrap,
+        align_tables: ctx.style().align_tables,
+        format_options: ctx.style().format_options,
         signatures: Signatures::new(&user),
         expl3_regions: &regions,
         profile,
@@ -406,6 +408,15 @@ fn expl3_regions(root: &SyntaxNode) -> Vec<TextRange> {
 #[derive(Clone, Copy)]
 struct LowerCtx<'a> {
     wrap: WrapMode,
+    /// Whether alignment grids (`tabular`/`array` and the math grids) are laid out
+    /// column-aligned. When `false` ([`FormatStyle::align_tables`] off) the grid
+    /// entry points fall back to the generic environment lowering, so hand-tuned
+    /// column layout is left untouched.
+    align_tables: bool,
+    /// Whether an authored-multi-line optional argument is reflowed one
+    /// comma-separated item per line ([`FormatStyle::format_options`]). `false`
+    /// leaves optional layout to the width-driven engine.
+    format_options: bool,
     signatures: Signatures<'a>,
     /// Sorted, non-overlapping byte ranges of the document's expl3 regions (see
     /// [`expl3_regions`]). Inside these, source whitespace is catcode-9 (ignored)
@@ -544,7 +555,9 @@ fn lower_node(node: &SyntaxNode, cx: LowerCtx<'_>) -> Ir {
         SyntaxKind::ENVIRONMENT if !has_verbatim_body(node) && is_math_env(node, cx) => {
             return lower_math_environment(node, cx);
         }
-        SyntaxKind::ENVIRONMENT if !has_verbatim_body(node) && is_alignment_env(node, cx) => {
+        SyntaxKind::ENVIRONMENT
+            if cx.align_tables && !has_verbatim_body(node) && is_alignment_env(node, cx) =>
+        {
             return lower_aligned_environment(node, cx);
         }
         SyntaxKind::ENVIRONMENT
@@ -2169,6 +2182,16 @@ fn lower_math_environment(node: &SyntaxNode, cx: LowerCtx<'_>) -> Ir {
         .children_with_tokens()
         .any(|e| matches!(e.kind(), SyntaxKind::AMPERSAND | SyntaxKind::LINE_BREAK));
 
+    // With table alignment disabled ([`FormatStyle::align_tables`] off), a grid
+    // (`align`, matrix, `gather`, …) is rendered through the generic environment
+    // lowering so its hand-tuned `&` columns are left untouched — mirroring the
+    // `is_alignment_env` gate in [`lower_node`] for the non-math grids. A
+    // single-formula `equation`/`displaymath` (not a grid) is unaffected: its
+    // relation-aware breaking still runs below.
+    if is_grid && !cx.align_tables {
+        return lower_environment(node, cx);
+    }
+
     let body = if is_grid {
         match build_alignment_grid(&body_elements, cx, true) {
             Some(items) if items.iter().any(|item| matches!(item, GridItem::Row(_))) => {
@@ -2932,6 +2955,66 @@ fn render_alignment_rows(items: &[GridItem], aligns: &[ColAlign]) -> Ir {
     Ir::join(Ir::hard_line(), lines)
 }
 
+/// For `[format] format-options`: split an authored-multi-line optional argument's
+/// body into its top-level comma-separated items, each rendered flat and trimmed.
+/// Returns the item texts plus whether the source ended with a trailing comma, or
+/// `None` to signal the caller should keep the generic layout.
+///
+/// A single sentinel (`\0`) marks each top-level comma: commas glued into an option
+/// `WORD` (`a=1,`) are split out, while a comma nested inside a `{…}`/`[…]` child
+/// lives in that child node (never a direct-body `WORD`) and is rendered as part of
+/// the child's flat text, so `key={a,b}` stays one item. Inter-item whitespace and
+/// newlines collapse to a single space that the per-item trim drops at the
+/// boundaries but keeps inside a value (`trim=1 2 3 4`).
+///
+/// Returns `None` (fall back to the generic layout) whenever the shape is not a
+/// clean comma list this rewrite can reproduce idempotently: no top-level comma at
+/// all (nothing to lay out one per line), a `%` comment (its text runs to end of
+/// line and would swallow the rest), a child that cannot render on one flat line (a
+/// nested multi-line group), or an empty item from a doubled/leading comma.
+fn split_optional_items(
+    body_elements: &[SyntaxElement],
+    cx: LowerCtx<'_>,
+) -> Option<(Vec<String>, bool)> {
+    const SEP: &str = "\u{0}";
+    let printer = Printer::new(FormatStyle::default());
+    let mut marked = String::new();
+    for element in body_elements {
+        match element {
+            SyntaxElement::Token(t) => match t.kind() {
+                SyntaxKind::WORD => marked.push_str(&t.text().replace(',', SEP)),
+                SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => marked.push(' '),
+                SyntaxKind::COMMENT => return None,
+                _ => marked.push_str(t.text()),
+            },
+            SyntaxElement::Node(n) => {
+                let flat = printer.print_flat(&lower_node(n, cx));
+                if flat.contains('\n') {
+                    return None;
+                }
+                marked.push_str(&flat);
+            }
+        }
+    }
+    if !marked.contains(SEP) {
+        return None;
+    }
+    let mut segments: Vec<&str> = marked.split(SEP).map(str::trim).collect();
+    // A trailing comma leaves a final empty segment; record and drop it so the comma
+    // is re-emitted after the last item and the layout stays a fixed point.
+    let trailing_comma = matches!(segments.last(), Some(s) if s.is_empty());
+    if trailing_comma {
+        segments.pop();
+    }
+    if segments.iter().any(|s| s.is_empty()) {
+        return None;
+    }
+    Some((
+        segments.into_iter().map(str::to_string).collect(),
+        trailing_comma,
+    ))
+}
+
 /// Lower a delimited group — a brace group `{…}` (`open`/`close` =
 /// `L_BRACE`/`R_BRACE`) or an optional-argument group `[…]`
 /// (`L_BRACKET`/`R_BRACKET`) — indenting its body one step, exactly like
@@ -2976,6 +3059,36 @@ fn lower_bracketed(node: &SyntaxNode, open: SyntaxKind, close: SyntaxKind, cx: L
     } else {
         open_ir
     };
+
+    // `[format] format-options`: an authored-multi-line optional argument is
+    // reflowed one comma-separated item per line. Only reached for an `OPTIONAL`
+    // (this arm of [`lower_node`] fires on `spans_multiple_lines`), so a single-line
+    // optional is never expanded — the source-multi-line trigger. A leading comment
+    // already rode the opener, so skip that shape. [`split_optional_items`] returns
+    // `None` for anything not a clean comma list, keeping the generic layout.
+    if open == SyntaxKind::L_BRACKET
+        && cx.format_options
+        && !has_leading_comment
+        && let Some((items, trailing_comma)) = split_optional_items(&body_elements, cx)
+    {
+        let last = items.len() - 1;
+        let mut lines: Vec<Ir> = Vec::new();
+        for (i, item) in items.iter().enumerate() {
+            if i > 0 {
+                lines.push(Ir::hard_line());
+            }
+            lines.push(Ir::verbatim(item.as_str()));
+            if i < last || trailing_comma {
+                lines.push(Ir::verbatim(","));
+            }
+        }
+        return Ir::concat([
+            open_ir,
+            Ir::indent(Ir::concat([Ir::hard_line(), Ir::concat(lines)])),
+            Ir::hard_line(),
+            close_ir,
+        ]);
+    }
 
     // A brace-group body under reflow is laid out as code-like statements: each
     // source line stays its own logical line, but an over-long one wraps to the

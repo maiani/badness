@@ -35,6 +35,20 @@ pub struct FormatStyle {
     pub line_width: usize,
     pub indent_width: usize,
     pub wrap: WrapMode,
+    /// Whether `tabular`/`array` and the math grids (`align`, matrix, `gather`, …)
+    /// are laid out as column-spec-aware aligned grids. `true` (the default) keeps
+    /// the ampersand-aligning behavior; `false` renders those environments through
+    /// the generic environment lowering, leaving hand-tuned column layout untouched
+    /// (the equivalent of tex-fmt's `format-tables = false`). A single-formula
+    /// `equation` is not a grid, so its relation-aware breaking is unaffected.
+    pub align_tables: bool,
+    /// Whether a *multi-line* optional argument (`[key=val, …]`) is reflowed one
+    /// comma-separated item per line. `false` (the default) leaves optional-argument
+    /// layout to the width-driven engine (authored line breaks preserved); `true`
+    /// normalizes an authored-multi-line list to strictly one item per line (the
+    /// equivalent of tex-fmt's `format-options = true`). A single-line optional is
+    /// never expanded.
+    pub format_options: bool,
 }
 
 impl Default for FormatStyle {
@@ -43,6 +57,8 @@ impl Default for FormatStyle {
             line_width: 80,
             indent_width: 2,
             wrap: WrapMode::default(),
+            align_tables: true,
+            format_options: false,
         }
     }
 }

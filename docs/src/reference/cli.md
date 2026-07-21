@@ -49,6 +49,18 @@ With paths, formats each file in place. With no paths, reads stdin and writes th
     - `semantic`: Semantic line breaks (sembr.org): keep authored breaks and add breaks at sentence boundaries
     - `preserve`: Leave authored line breaks untouched
 
+`--align-tables`
+:   Column-align `tabular`/`array` and the math grids (`align`, matrix, …). On by default; pass `--no-align-tables` to leave hand-tuned column layout untouched. Overrides `[format] align-tables`
+
+`--no-align-tables`
+:   Disable column alignment of tables and math grids (see `--align-tables`)
+
+`--format-options`
+:   Reflow an authored-multi-line optional argument (`[key=val, …]`) one item per line. Off by default. Overrides `[format] format-options`
+
+`--no-format-options`
+:   Keep the width-driven layout of optional arguments (see `--format-options`)
+
 `--exclude <PATTERN>`
 :   Gitignore-style pattern to skip during directory discovery (repeatable). Added on top of any `exclude`/`extend-exclude` from `badness.toml`
 

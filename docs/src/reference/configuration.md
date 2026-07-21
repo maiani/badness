@@ -14,6 +14,8 @@ its default.
 # line-width = 80
 # indent-width = 2
 # wrap = "reflow"  # reflow | sentence | semantic | preserve
+# align-tables = true     # column-align tabular/array and the math grids
+# format-options = false  # one item per line in a multi-line [key=val, ...] arg
 
 [lint]
 # select = ["..."]  # if set, only these rules run
@@ -189,6 +191,48 @@ is inserted after it. Merged on top of the built-in per-language lists.
 [format.no-break-abbreviations]
 default = ["ibid."]         # applied to every document
 de = ["bzw.", "Abb."]       # applied only when lang resolves to German
+```
+
+### `align-tables`
+
+Whether `tabular`/`array` and the math grids (`align`, matrix, `gather`, …) are
+laid out as column-spec-aware aligned grids: cells padded so the `&` separators
+line up per the `{lcr}` column spec. When `false`, those environments are
+rendered through the generic environment lowering—rows keep their body indent
+but the columns are not padded—so hand-tuned tables are left untouched (the
+equivalent of tex-fmt's `format-tables = false`). A single-formula `equation` is
+not a grid, so its relation-aware line breaking is unaffected either way.
+
+**Default value**: `true`
+
+**Type**: boolean
+
+**Example**:
+
+```toml
+[format]
+align-tables = false
+```
+
+### `format-options`
+
+Whether an authored *multi-line* optional argument (`[key=val, …]`) is reflowed
+one comma-separated item per line. When `false`, optional-argument layout is left
+to the width-driven engine (authored line breaks are preserved as written). When
+`true`, a list the author already spread across several lines is normalized to
+strictly one item per line—commas nested inside a `{…}` value stay put, and a
+trailing comma is preserved. A single-line optional is never expanded (the
+source-multi-line trigger). The equivalent of tex-fmt's `format-options = true`.
+
+**Default value**: `false`
+
+**Type**: boolean
+
+**Example**:
+
+```toml
+[format]
+format-options = true
 ```
 
 ## `[lint]`

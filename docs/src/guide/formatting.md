@@ -15,8 +15,12 @@ badness format --check paper.tex  # report, don't write; non-zero if unformatted
 ## Style Options
 
 The style flags---`--line-width`, `--indent-width`, and `--wrap`---mirror the
-`[format]` section of `badness.toml` and override it for a single run. Each
-option's default and meaning is listed in the [Configuration
+`[format]` section of `badness.toml` and override it for a single run. Two
+boolean toggles round out the set: `--no-align-tables` turns off column
+alignment of `tabular`/`array` and the math grids (leaving hand-tuned tables
+untouched), and `--format-options` reflows a multi-line optional argument
+(`[key=val, …]`) one item per line. Each option's default and meaning---and its
+`[format]` key---is listed in the [Configuration
 reference](../reference/configuration.md#format).
 
 For persistent settings, badness reads a `badness.toml` discovered from the

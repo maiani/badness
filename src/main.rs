@@ -71,6 +71,10 @@ fn main() -> ExitCode {
             line_width,
             indent_width,
             wrap,
+            align_tables,
+            no_align_tables,
+            format_options,
+            no_format_options,
             exclude,
             force_exclude,
         } => {
@@ -98,6 +102,19 @@ fn main() -> ExitCode {
             }
             if let Some(w) = indent_width {
                 style.indent_width = w;
+            }
+            // Table/optional toggles: a CLI flag (in either direction) overrides the
+            // configured value; with neither flag the config value stands. The two
+            // paired flags are mutually `overrides_with`, so at most one is set.
+            if no_align_tables {
+                style.align_tables = false;
+            } else if align_tables {
+                style.align_tables = true;
+            }
+            if no_format_options {
+                style.format_options = false;
+            } else if format_options {
+                style.format_options = true;
             }
             // Wrap precedence: `--wrap` > config `wrap` > file-kind default. The
             // override is `None` only when neither is set, leaving each file on its
@@ -237,6 +254,10 @@ const STARTER_CONFIG: &str = "\
 # wrap = \"reflow\"  # reflow | sentence | semantic | preserve
                      # omit to use each file kind's default
                      # (.tex -> reflow, .sty/.cls/.dtx/.ins -> preserve)
+# align-tables = true    # column-align tabular/array and the math grids
+                         # (align, matrix, ...); false leaves them untouched
+# format-options = false # true reflows a multi-line [key=val, ...] optional
+                         # argument one item per line
 
 [lint]
 # select = [\"...\"]  # if set, only these rules run

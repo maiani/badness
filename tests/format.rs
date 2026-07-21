@@ -950,3 +950,116 @@ fn range_format_multiline_environment_block() {
         "a multi-line block stays multi-line"
     );
 }
+
+/// Assert `formatted` is idempotent under `style`, and a clean, lossless document.
+fn assert_style_invariants(formatted: &str, style: FormatStyle) {
+    assert_eq!(
+        format_with_style(formatted, style).expect("reformat"),
+        formatted,
+        "output must be idempotent"
+    );
+    assert!(
+        parse(formatted).errors.is_empty(),
+        "output must parse cleanly"
+    );
+    assert_eq!(
+        reconstruct(formatted),
+        formatted,
+        "output must round-trip losslessly"
+    );
+}
+
+/// `align-tables = false` ([`FormatStyle::align_tables`] off) leaves both a
+/// `tabular` grid and a math `align` grid on the generic environment path: rows
+/// keep their body indent but the `&` columns are *not* padded to a shared width.
+/// The default (`true`) column-aligns them. A single-formula `equation` is not a
+/// grid, so it is unaffected.
+#[test]
+fn align_tables_off_leaves_grids_unaligned() {
+    let style = FormatStyle {
+        wrap: WrapMode::Preserve,
+        align_tables: false,
+        ..FormatStyle::default()
+    };
+
+    let tabular = "\\begin{tabular}{lr}\naaaa & b \\\\\nc & d \\\\\n\\end{tabular}\n";
+    let out = format_with_style(tabular, style).expect("format tabular");
+    assert_eq!(
+        out, "\\begin{tabular}{lr}\n  aaaa & b \\\\\n  c & d \\\\\n\\end{tabular}\n",
+        "no column padding when align-tables is off"
+    );
+    assert_style_invariants(&out, style);
+
+    // The default aligns the same input, padding the short cell.
+    let aligned = format_with_style(
+        tabular,
+        FormatStyle {
+            wrap: WrapMode::Preserve,
+            ..FormatStyle::default()
+        },
+    )
+    .expect("format tabular aligned");
+    assert!(
+        aligned.contains("c    & d"),
+        "default column-aligns: {aligned:?}"
+    );
+
+    // A math `align` grid is likewise left unaligned.
+    let math = "\\begin{align}\nxxxx &= a \\\\\ny &= c \\\\\n\\end{align}\n";
+    let math_out = format_with_style(math, style).expect("format align");
+    assert_eq!(
+        math_out, "\\begin{align}\n  xxxx & = a \\\\\n  y & = c \\\\\n\\end{align}\n",
+        "math grid rows keep their own widths when align-tables is off"
+    );
+    assert_style_invariants(&math_out, style);
+}
+
+/// `format-options = true` ([`FormatStyle::format_options`] on) reflows an
+/// authored-multi-line optional argument one comma-separated item per line: a
+/// mid-line item is pushed to its own line, a trailing comma is preserved, and a
+/// value nested in `{…}` (its own comma) stays one item. A single-line optional is
+/// never expanded, and the toggle is off by default.
+#[test]
+fn format_options_breaks_multiline_optional_one_per_line() {
+    let style = FormatStyle {
+        wrap: WrapMode::Reflow,
+        format_options: true,
+        ..FormatStyle::default()
+    };
+
+    // Messy authored layout normalizes to strictly one item per line.
+    let messy = "\\includegraphics[width=1cm,\nheight=2cm, angle=90,\nscale=3]{a}\n";
+    let out = format_with_style(messy, style).expect("format optional");
+    assert_eq!(
+        out,
+        "\\includegraphics[\n  width=1cm,\n  height=2cm,\n  angle=90,\n  scale=3\n]{a}\n",
+    );
+    assert_style_invariants(&out, style);
+
+    // A trailing comma is re-emitted, and a `{a,b}` value stays a single item.
+    let trailing = "\\includegraphics[\n  a=1,\n  b={x,y},\n  c=3,\n]{a}\n";
+    let out = format_with_style(trailing, style).expect("format trailing");
+    assert_eq!(
+        out,
+        "\\includegraphics[\n  a=1,\n  b={x,y},\n  c=3,\n]{a}\n"
+    );
+    assert_style_invariants(&out, style);
+
+    // A single-line optional is left inline (the source-multi-line trigger), and
+    // the default (off) leaves an authored break to the width-driven engine.
+    let single = "\\includegraphics[width=1cm,height=2cm]{a}\n";
+    assert_eq!(
+        format_with_style(single, style).expect("single line"),
+        single,
+        "a single-line optional is never expanded"
+    );
+    let default_style = FormatStyle {
+        wrap: WrapMode::Reflow,
+        ..FormatStyle::default()
+    };
+    assert_eq!(
+        format_with_style(messy, default_style).expect("default"),
+        "\\includegraphics[\n  width=1cm,\n  height=2cm, angle=90,\n  scale=3\n]{a}\n",
+        "off by default: authored line grouping is preserved"
+    );
+}

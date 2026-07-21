@@ -111,6 +111,19 @@ pub struct FormatConfig {
     /// not broken after it. Merged on top of the built-in per-language lists.
     #[serde(default)]
     pub no_break_abbreviations: BTreeMap<String, Vec<String>>,
+    /// Whether `tabular`/`array` and the math grids (`align`, matrix, `gather`, …)
+    /// are laid out as column-spec-aware aligned grids. Defaults to `true`; set to
+    /// `false` to leave hand-tuned column layout untouched (tex-fmt's
+    /// `format-tables = false`). A single-formula `equation` is not a grid, so its
+    /// relation-aware breaking is unaffected.
+    #[serde(default = "default_true")]
+    pub align_tables: bool,
+    /// Whether an authored-multi-line optional argument (`[key=val, …]`) is reflowed
+    /// one comma-separated item per line. Defaults to `false` (optional-argument
+    /// layout is left to the width-driven engine); set to `true` for tex-fmt's
+    /// `format-options = true`. A single-line optional is never expanded.
+    #[serde(default)]
+    pub format_options: bool,
 }
 
 impl Default for FormatConfig {
@@ -121,6 +134,8 @@ impl Default for FormatConfig {
             wrap: None,
             lang: None,
             no_break_abbreviations: BTreeMap::new(),
+            align_tables: true,
+            format_options: false,
         }
     }
 }
@@ -168,6 +183,10 @@ fn default_line_width() -> u32 {
     DEFAULT_LINE_WIDTH
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn default_indent_width() -> u32 {
     DEFAULT_INDENT_WIDTH
 }
@@ -210,6 +229,8 @@ impl From<&FormatConfig> for FormatStyle {
             line_width: config.line_width as usize,
             indent_width: config.indent_width as usize,
             wrap: WrapMode::default(),
+            align_tables: config.align_tables,
+            format_options: config.format_options,
         }
     }
 }
@@ -461,6 +482,27 @@ mod tests {
     fn rejects_unknown_wrap() {
         let err = parse("[format]\nwrap = \"smart\"\n").expect_err("unknown variant");
         assert!(matches!(err, ConfigError::Parse { .. }));
+    }
+
+    #[test]
+    fn align_tables_defaults_true_and_format_options_false() {
+        let config = parse("[format]\n").expect("parse");
+        assert!(config.format.align_tables);
+        assert!(!config.format.format_options);
+        let style = FormatStyle::from(&config.format);
+        assert!(style.align_tables);
+        assert!(!style.format_options);
+    }
+
+    #[test]
+    fn parses_align_tables_and_format_options() {
+        let config =
+            parse("[format]\nalign-tables = false\nformat-options = true\n").expect("parse");
+        assert!(!config.format.align_tables);
+        assert!(config.format.format_options);
+        let style = FormatStyle::from(&config.format);
+        assert!(!style.align_tables);
+        assert!(style.format_options);
     }
 
     #[test]

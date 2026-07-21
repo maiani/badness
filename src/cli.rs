@@ -70,6 +70,22 @@ pub enum Command {
         /// How to lay out line breaks inside a paragraph.
         #[arg(long, value_enum)]
         wrap: Option<WrapArg>,
+        /// Column-align `tabular`/`array` and the math grids (`align`, matrix, …).
+        /// On by default; pass `--no-align-tables` to leave hand-tuned column layout
+        /// untouched. Overrides `[format] align-tables`.
+        #[arg(long, overrides_with = "no_align_tables")]
+        align_tables: bool,
+        /// Disable column alignment of tables and math grids (see `--align-tables`).
+        #[arg(long = "no-align-tables", overrides_with = "align_tables")]
+        no_align_tables: bool,
+        /// Reflow an authored-multi-line optional argument (`[key=val, …]`) one item
+        /// per line. Off by default. Overrides `[format] format-options`.
+        #[arg(long, overrides_with = "no_format_options")]
+        format_options: bool,
+        /// Keep the width-driven layout of optional arguments (see
+        /// `--format-options`).
+        #[arg(long = "no-format-options", overrides_with = "format_options")]
+        no_format_options: bool,
         /// Gitignore-style pattern to skip during directory discovery (repeatable).
         /// Added on top of any `exclude`/`extend-exclude` from `badness.toml`.
         #[arg(long, value_name = "PATTERN")]

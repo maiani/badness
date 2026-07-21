@@ -41,7 +41,8 @@ are implemented.
 **Configuration (`badness.toml`).** Discovered by an ancestor walk from each input
 (`config.rs`); the **CLI is the only consumer**—the library API takes a fully-resolved
 `FormatStyle`. Sections include `[format]` (`line-width`, `indent-width`, `wrap`,
-`lang`, `no-break-abbreviations`), and `[build]` (`aux-dir`). Excludes follow
+`lang`, `no-break-abbreviations`, `align-tables`, `format-options`), and `[build]`
+(`aux-dir`). Excludes follow
 the Ruff model (`exclude` *replaces* the built-in `DEFAULT_EXCLUDE`; `extend-exclude` is
 additive). `wrap` is optional and resolves per file kind when omitted. This keeps the
 formatter hermetic (config is local project data, not the environment). TEXMF discovery
@@ -287,7 +288,12 @@ never match.
   deferred. The `\\` line break (with a tightly-bound `*`/`[len]`) is grouped by the
   *parser* into a `LINE_BREAK` node so the formatter sees `\\[2ex]` as one unit.
 - **Table column alignment** (`tabular`/`array`) is a formatter concern (layout, so
-  the formatter owns it—tenet #1). The `{lcr}` column spec is parsed by
+  the formatter owns it—tenet #1). It is gated by `[format] align-tables` (default on;
+  `FormatStyle::align_tables`): when off, the non-math grid arm (`is_alignment_env`) and
+  the math-grid branch of `lower_math_environment` both fall back to the generic
+  environment lowering, leaving hand-tuned `&` columns untouched (a single-formula
+  `equation` is not a grid, so its relation breaking is unaffected). The `{lcr}` column
+  spec is parsed by
   `formatter::colspec` into per-column `ColAlign`s, reading only the static argument
   text (no macro meaning); it is **conservative**, bailing to all-left on any token it
   does not model (`p`/`m`/`b` count as left, `*{n}{}` expands, `>{}`/`<{}`/`@{}`/`!{}`
